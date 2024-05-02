@@ -3,23 +3,8 @@
 ################################################################################
 
 /.vs
-/PS5 NOR Modifier/bin/
-/PS5 NOR Modifier/obj/
+/PS5 NOR Modifier/bin
+/PS5 NOR Modifier/obj
 /PS5 NOR Modifier/.vs
-/PS5NORModifier.Models/bin/Debug/net8.0
+/PS5NORModifier.Models/bin
 /PS5NORModifier.Models/obj
-/PS5 NOR Modifier/obj/Release/net6.0-windows/PS5 NOR Modifier.AssemblyInfo.cs
-/PS5 NOR Modifier/obj/Release/net6.0-windows/PS5 NOR Modifier.AssemblyInfoInputs.cache
-/PS5 NOR Modifier/obj/Release/net6.0-windows/PS5 NOR Modifier.assets.cache
-/PS5 NOR Modifier/obj/Release/net6.0-windows/PS5 NOR Modifier.csproj.AssemblyReference.cache
-/PS5 NOR Modifier/obj/Release/net6.0-windows/PS5 NOR Modifier.GeneratedMSBuildEditorConfig.editorconfig
-/PS5 NOR Modifier/obj/x86/Debug/net6.0-windows/PS5 NOR Modifier.AssemblyInfo.cs
-/PS5 NOR Modifier/obj/x86/Debug/net6.0-windows/PS5 NOR Modifier.AssemblyInfoInputs.cache
-/PS5 NOR Modifier/obj/x86/Debug/net6.0-windows/PS5 NOR Modifier.assets.cache
-/PS5 NOR Modifier/obj/x86/Debug/net6.0-windows/PS5 NOR Modifier.csproj.AssemblyReference.cache
-/PS5 NOR Modifier/obj/x86/Debug/net6.0-windows/PS5 NOR Modifier.GeneratedMSBuildEditorConfig.editorconfig
-/PS5 NOR Modifier/obj/x86/Release/net6.0-windows/PS5 NOR Modifier.AssemblyInfo.cs
-/PS5 NOR Modifier/obj/x86/Release/net6.0-windows/PS5 NOR Modifier.AssemblyInfoInputs.cache
-/PS5 NOR Modifier/obj/x86/Release/net6.0-windows/PS5 NOR Modifier.assets.cache
-/PS5 NOR Modifier/obj/x86/Release/net6.0-windows/PS5 NOR Modifier.csproj.AssemblyReference.cache
-/PS5 NOR Modifier/obj/x86/Release/net6.0-windows/PS5 NOR Modifier.GeneratedMSBuildEditorConfig.editorconfig
