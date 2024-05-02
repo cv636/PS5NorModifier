@@ -5,6 +5,8 @@ VisualStudioVersion = 17.3.32901.215
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PS5 NOR Modifier", "PS5 NOR Modifier\PS5 NOR Modifier.csproj", "{BBBF9E78-9480-436A-92F1-B5B8943BCDEF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PS5NORModifier.Models", "PS5NORModifier.Models\PS5NORModifier.Models.csproj", "{9E4F781C-E749-4092-8F34-9AEB451018F3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,14 @@ Global
 		{BBBF9E78-9480-436A-92F1-B5B8943BCDEF}.Release|Any CPU.Build.0 = Release|Any CPU
 		{BBBF9E78-9480-436A-92F1-B5B8943BCDEF}.Release|x86.ActiveCfg = Release|x86
 		{BBBF9E78-9480-436A-92F1-B5B8943BCDEF}.Release|x86.Build.0 = Release|x86
+		{9E4F781C-E749-4092-8F34-9AEB451018F3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9E4F781C-E749-4092-8F34-9AEB451018F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9E4F781C-E749-4092-8F34-9AEB451018F3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9E4F781C-E749-4092-8F34-9AEB451018F3}.Debug|x86.Build.0 = Debug|Any CPU
+		{9E4F781C-E749-4092-8F34-9AEB451018F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9E4F781C-E749-4092-8F34-9AEB451018F3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9E4F781C-E749-4092-8F34-9AEB451018F3}.Release|x86.ActiveCfg = Release|Any CPU
+		{9E4F781C-E749-4092-8F34-9AEB451018F3}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
