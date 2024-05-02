@@ -14,74 +14,57 @@ using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 using System.Net;
 using System.Xml;
 using System.Security.Policy;
+using PS5NORModifier.Models;
+using System.Reflection;
 
-namespace PS5_NOR_Modifier
-{
-    public partial class Form1 : Form
-    {
+namespace PS5_NOR_Modifier {
+    public partial class Form1 : Form {
+        static SerialPort UARTSerial = new SerialPort();
+        HttpClient _httpClient = new() { BaseAddress = new("http://uartcodes.com/") };
+        // We want this app to work offline, so let's declare where the local "offline" database will be stored
+        string localDatabaseFile = "errorDB.xml";
+        IPlayStation? selectedPS = new PS5_Non_Slim();
+        List<IPlayStation> _playStations = new();
 
-        public Form1()
-        {
+        public Form1() {
             InitializeComponent();
+            cmb_psTypes.SelectedValueChanged += Cmb_psTypes_SelectedValueChanged;
+            foreach (var a in AppDomain.CurrentDomain
+                .GetAssemblies()
+                .SelectMany(x => x.GetTypes())
+                .Where(x => !x.IsInterface && typeof(IPlayStation).IsAssignableFrom(x))) {
+                if (a is null) continue;
+                try {
+                    IPlayStation? imp = (IPlayStation?)Activator.CreateInstance(a);
+                    if (imp is not null) _playStations.Add(imp);
+                } catch (Exception ex) { Console.WriteLine(ex.Message); }
+            }
+            cmb_psTypes.DataSource = _playStations;
+            cmb_psTypes.DisplayMember = "Name";
         }
 
-        static string CalculateChecksum(string str)
-        {
+        private void Cmb_psTypes_SelectedValueChanged(object? sender, EventArgs e) {
+            pnl_noPS.Visible = cmb_psTypes.SelectedValue is null;
+        }
+
+        static string CalculateChecksum(string str) {
             int sum = 0;
-            foreach (char c in str)
-            {
+            foreach (char c in str) {
                 sum += (int)c;
             }
             return str + ":" + (sum & 0xFF).ToString("X2");
         }
 
-        private void throwError(string errmsg)
-        {
+        private void throwError(string errmsg) {
             MessageBox.Show(errmsg, "An Error Has Occurred", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
-        // We want this app to work offline, so let's declare where the local "offline" database will be stored
-        string localDatabaseFile = "errorDB.xml";
 
-        static SerialPort UARTSerial = new SerialPort();
 
-        /// <summary>
-        /// With thanks to  @jjxtra on Github. The code has already been created and there's no need to reinvent the wheel is there?
-        /// </summary>
-        #region Hex Code
 
-        private static IEnumerable<int> PatternAt(byte[] source, byte[] pattern)
-        {
-            for (int i = 0; i < source.Length; i++)
-            {
-                if (source.Skip(i).Take(pattern.Length).SequenceEqual(pattern))
-                {
-                    yield return i;
-                }
-            }
-        }
 
-        private static byte[] ConvertHexStringToByteArray(string hexString)
-        {
-            if (hexString.Length % 2 != 0)
-            {
-                throw new ArgumentException(String.Format(CultureInfo.InvariantCulture, "The binary key cannot have an odd number of digits: {0}", hexString));
-            }
 
-            byte[] data = new byte[hexString.Length / 2];
-            for (int index = 0; index < data.Length; index++)
-            {
-                string byteValue = hexString.Substring(index * 2, 2);
-                data[index] = byte.Parse(byteValue, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-            }
-
-            return data;
-        }
-
-        #endregion
-
-        private void Form1_Load(object sender, EventArgs e)
-        {
+        private void Form1_Load(object sender, EventArgs e) {
             // Upon first launch, we need to get a list of COM ports available for UART
             string[] ports = SerialPort.GetPortNames();
             comboComPorts.Items.Clear();
@@ -91,49 +74,24 @@ namespace PS5_NOR_Modifier
             btnDisconnectCom.Enabled = false;
         }
 
-        // Declare offsets to detect console version
-        long offsetOne = 0x1c7010;
-        long offsetTwo = 0x1c7030;
-        long WiFiMacOffset = 0x1C73C0;
-        string? WiFiMacValue = null;
-        long LANMacOffset = 0x1C4020;
-        string? LANMacValue = null;
-        string? offsetOneValue = null;
-        string? offsetTwoValue = null;
-        long serialOffset = 0x1c7210;
-        string? serialValue = null;
-        long variantOffset = 0x1c7226;
-        string? variantValue = null;
-        long moboSerialOffset = 0x1C7200;
-        string? moboSerialValue = null;
 
-        private async Task DownloadDatabaseAsync()
-        {
-            // Define the URL
-            string url = "http://uartcodes.com/xml.php"; // Update with your URL
 
+        private async Task DownloadDatabaseAsync() {
             // Define the file path to save the XML
+            try {
+                // Download the XML data from the URL
+                string xmlData = await _httpClient.GetStringAsync("xml.php");
 
-            try
-            {
-                // Create a WebClient instance
-                using (HttpClient client = new())
-                {
-                    // Download the XML data from the URL
-                    string xmlData = await client.GetStringAsync(url);
+                // Create an XmlDocument instance and load the XML data
+                XmlDocument xmlDoc = new XmlDocument();
+                xmlDoc.LoadXml(xmlData);
 
-                    // Create an XmlDocument instance and load the XML data
-                    XmlDocument xmlDoc = new XmlDocument();
-                    xmlDoc.LoadXml(xmlData);
+                // Save the XML data to a file
+                xmlDoc.Save(localDatabaseFile);
 
-                    // Save the XML data to a file
-                    xmlDoc.Save(localDatabaseFile);
+                MessageBox.Show("The most recent offline database has been updated successfully.", "Offline Database Updated!", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-                    MessageBox.Show("The most recent offline database has been updated successfully.", "Offline Database Updated!", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-            }
-            catch (Exception ex)
-            {
+            } catch (Exception ex) {
                 Console.WriteLine("Error: " + ex.Message);
             }
         }
@@ -144,15 +102,11 @@ namespace PS5_NOR_Modifier
         /// </summary>
         /// <param name="ErrorCode"></param>
         /// <returns></returns>
-        async Task<string> ParseErrorsAsync(string ErrorCode)
-        {
+        async Task<string> ParseErrorsAsync(string ErrorCode) {
             // If the user has opted to parse errors with an offline database, run the parse offline function
-            if (chkUseOffline.Checked == true)
-            {
+            if (chkUseOffline.Checked == true) {
                 return ParseErrorsOffline(ErrorCode);
-            }
-            else
-            {
+            } else {
                 // The user wants to use the online version. Proceed at will
 
                 // Define the URL with the error code parameter
@@ -160,12 +114,10 @@ namespace PS5_NOR_Modifier
 
                 string results = "";
 
-                try
-                {
+                try {
                     string response = "";
                     // Create a WebClient instance to send the request
-                    using (HttpClient client = new()) 
-                    {
+                    using (HttpClient client = new()) {
                         // Send the request and retrieve the response as a string
                         response = await client.GetStringAsync(url);
                     }
@@ -173,7 +125,7 @@ namespace PS5_NOR_Modifier
                     XmlDocument xmlDoc = new XmlDocument();
                     xmlDoc.LoadXml(response);
 
-                    
+
                     // Get the root node
                     XmlNode? root = xmlDoc.DocumentElement;
                     if (root is null) {
@@ -181,17 +133,14 @@ namespace PS5_NOR_Modifier
                     }
 
                     // Check if the root node is <errorCodes>
-                    if (root.Name == "errorCodes")
-                    {
+                    if (root.Name == "errorCodes") {
                         // Loop through each errorCode node
-                        foreach (XmlNode errorCodeNode in root.ChildNodes)
-                        {
+                        foreach (XmlNode errorCodeNode in root.ChildNodes) {
                             // Check if the node is <errorCode>
-                            if (errorCodeNode.Name == "errorCode")
-                            {
+                            if (errorCodeNode.Name == "errorCode") {
                                 // Get ErrorCode and Description
                                 string errorCode = errorCodeNode.SelectSingleNode("ErrorCode")?.InnerText ?? "";
-                                string description = errorCodeNode.SelectSingleNode("Description")?.InnerText??"";
+                                string description = errorCodeNode.SelectSingleNode("Description")?.InnerText ?? "";
 
                                 // Output the results
                                 results = "Error code: "
@@ -201,17 +150,13 @@ namespace PS5_NOR_Modifier
                                     + description;
                             }
                         }
-                    }
-                    else
-                    {
+                    } else {
                         results = "Error code: "
                                     + ErrorCode
                                     + Environment.NewLine
                                     + "An error occurred while fetching a result for this error. Please try again!";
                     }
-                }
-                catch (Exception ex)
-                {
+                } catch (Exception ex) {
                     results = "Error code: "
                         + ErrorCode
                         + Environment.NewLine
@@ -221,15 +166,12 @@ namespace PS5_NOR_Modifier
             }
         }
 
-        string ParseErrorsOffline(string errorCode)
-        {
+        string ParseErrorsOffline(string errorCode) {
             string results = "";
 
-            try
-            {
+            try {
                 // Check if the XML file exists
-                if (File.Exists(localDatabaseFile))
-                {
+                if (File.Exists(localDatabaseFile)) {
                     // Load the XML file
                     XmlDocument xmlDoc = new XmlDocument();
                     xmlDoc.Load(localDatabaseFile);
@@ -239,95 +181,60 @@ namespace PS5_NOR_Modifier
                     if (root is null) return results;
 
                     // Check if the root node is <errorCodes>
-                    if (root.Name == "errorCodes")
-                    {
+                    if (root.Name == "errorCodes") {
                         // Loop through each errorCode node
-                        foreach (XmlNode errorCodeNode in root.ChildNodes)
-                        {
+                        foreach (XmlNode errorCodeNode in root.ChildNodes) {
                             // Check if the node is <errorCode>
-                            if (errorCodeNode.Name == "errorCode")
-                            {
+                            if (errorCodeNode.Name == "errorCode") {
                                 // Get ErrorCode and Description
-                                string errorCodeValue = errorCodeNode.SelectSingleNode("ErrorCode")?.InnerText??"";
-                                string description = errorCodeNode.SelectSingleNode("Description")?.InnerText??"";
+                                string errorCodeValue = errorCodeNode.SelectSingleNode("ErrorCode")?.InnerText ?? "";
+                                string description = errorCodeNode.SelectSingleNode("Description")?.InnerText ?? "";
 
                                 // Check if the current error code matches the requested error code
-                                if (errorCodeValue == errorCode)
-                                {
+                                if (errorCodeValue == errorCode) {
                                     // Output the results
                                     results = "Error code: " + errorCodeValue + Environment.NewLine + "Description: " + description;
                                     break; // Exit the loop after finding the matching error code
                                 }
                             }
                         }
-                    }
-                    else
-                    {
+                    } else {
                         results = "Error: Invalid XML database file. Please reconfigure the application, redownload the offline database, or uncheck the option to use the offline database.";
                     }
-                }
-                else
-                {
+                } else {
                     results = "Error: Local XML file not found.";
                 }
-            }
-            catch (Exception ex)
-            {
+            } catch (Exception ex) {
                 results = "Error: " + ex.Message;
             }
 
             return results;
         }
 
-        string HexStringToString(string hexString)
-        {
-            if (hexString == null || (hexString.Length & 1) == 1)
-            {
-                throw new ArgumentException();
-            }
-            var sb = new StringBuilder();
-            for (var i = 0; i < hexString.Length; i += 2)
-            {
-                var hexChar = hexString.Substring(i, 2);
-                sb.Append((char)Convert.ToByte(hexChar, 16));
-            }
-            return sb.ToString();
-        }
+
 
         /// <summary>
         /// Lauinches a URL in a new window using the default browser...
         /// </summary>
         /// <param name="url">The URL you want to launch</param>
-        private void OpenUrl(string url)
-        {
-            try
-            {
+        private void OpenUrl(string url) {
+            try {
                 Process.Start(url);
-            }
-            catch
-            {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
+            } catch {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
                     url = url.Replace("&", "^&");
                     Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                {
+                } else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
                     Process.Start("xdg-open", url);
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                {
+                } else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
                     Process.Start("open", url);
-                }
-                else
-                {
+                } else {
                     throw;
                 }
             }
         }
 
-        private void ResetAppFields()
-        {
+        private void ResetAppFields() {
             fileLocationBox.Text = "";
             serialNumber.Text = "...";
             boardVariant.Text = "...";
@@ -344,39 +251,33 @@ namespace PS5_NOR_Modifier
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void label4_Click(object sender, EventArgs e)
-        {
+        private void label4_Click(object sender, EventArgs e) {
             OpenUrl("https://www.streamelements.com/thecod3r/tip");
         }
 
-        private void pictureBox2_Click(object sender, EventArgs e)
-        {
+        private void pictureBox2_Click(object sender, EventArgs e) {
             OpenUrl("https://www.streamelements.com/thecod3r/tip");
         }
 
 
         #endregion
 
-        private void browseFileButton_Click(object sender, EventArgs e)
-        {
+        private async void browseFileButton_Click(object sender, EventArgs e) {
             OpenFileDialog fileDialogBox = new OpenFileDialog();
             fileDialogBox.Title = "Open NOR BIN File";
             fileDialogBox.Filter = "PS5 BIN Files|*.bin";
+            if (selectedPS is null) {
+                throwError("Please select a playstation version");
+                return;
+            }
 
-            if (fileDialogBox.ShowDialog() == DialogResult.OK)
-            {
-                if(fileDialogBox.CheckFileExists == false)
-                {
+            if (fileDialogBox.ShowDialog() == DialogResult.OK) {
+                if (fileDialogBox.CheckFileExists == false) {
                     throwError("The file you selected could not be found. Please check the file exists and is a valid BIN file.");
-                }
-                else
-                {
-                    if(!fileDialogBox.SafeFileName.EndsWith(".bin"))
-                    {
+                } else {
+                    if (!fileDialogBox.SafeFileName.EndsWith(".bin")) {
                         throwError("The file you selected is not a valid. Please ensure the file you are choosing is a correct BIN file and try again.");
-                    }
-                    else
-                    {
+                    } else {
                         // Let's load simple information first, before loading BIN specific data
                         fileLocationBox.Text = "";
                         // Get the path selected and print it into the path box
@@ -385,427 +286,72 @@ namespace PS5_NOR_Modifier
                         fileLocationBox.Text = selectedPath;
 
                         // Get file length and show in bytes and MB
-                        long length = new System.IO.FileInfo(selectedPath).Length;
+                        long length = new FileInfo(selectedPath).Length;
                         fileSizeInfo.Text = length.ToString() + " bytes (" + length / 1024 / 1024 + "MB)";
 
+
                         #region Extract PS5 Version
-
-                        try
-                        {
-                            BinaryReader reader = new BinaryReader(new FileStream(fileDialogBox.FileName, FileMode.Open));
-                            //Set the position of the reader
-                            reader.BaseStream.Position = offsetOne;
-                            //Read the offset
-                            offsetOneValue = BitConverter.ToString(reader.ReadBytes(12)).Replace("-", null);
-                            reader.Close();
-                        }
-                        catch
-                        {
-                            // Obviously this value is invalid, so null the value and move on
-                            offsetOneValue = null;
-                        }
-
-                        try
-                        {
-                            BinaryReader reader = new BinaryReader(new FileStream(fileDialogBox.FileName, FileMode.Open));
-                            //Set the position of the reader
-                            reader.BaseStream.Position = offsetOne;
-                            //Read the offset
-                            offsetTwoValue = BitConverter.ToString(reader.ReadBytes(12)).Replace("-", null);
-                            reader.Close();
-                        }
-                        catch
-                        {
-                            // Obviously this value is invalid, so null the value and move on
-                            offsetTwoValue = null;
-                        }
-
-                        
-                        if(offsetOneValue?.Contains("22020101")??false)
-                        {
-                            modelInfo.Text = "Disc Edition";
-                        }
-                        else
-                        {
-                            if(offsetTwoValue?.Contains("22030101") ?? false)
-                            {
-                                modelInfo.Text = "Digital Edition";
-                            }
-                            else
-                            {
-                                modelInfo.Text = "Unknown";
-                            }
-                        }
-
-                        #endregion
-
-                        #region Extract Motherboard Serial Number
-
-                        try
-                        {
-                            BinaryReader reader = new BinaryReader(new FileStream(fileDialogBox.FileName, FileMode.Open));
-                            //Set the position of the reader
-                            reader.BaseStream.Position = moboSerialOffset;
-                            //Read the offset
-                            moboSerialValue = BitConverter.ToString(reader.ReadBytes(16)).Replace("-", null);
-                            reader.Close();
-                        }
-                        catch
-                        {
-                            // Obviously this value is invalid, so null the value and move on
-                            moboSerialValue = null;
-                        }
-
-
-
-                        if(moboSerialValue != null)
-                        {
-                            moboSerialInfo.Text = HexStringToString(moboSerialValue);
-                        }
-                        else
-                        {
-                            moboSerialInfo.Text = "Unknown";
-                        }
-
-                        #endregion
-
-                        #region Extract Board Serial Number
-
-                        try
-                        {
-                            BinaryReader reader = new BinaryReader(new FileStream(fileDialogBox.FileName, FileMode.Open));
-                            //Set the position of the reader
-                            reader.BaseStream.Position = serialOffset;
-                            //Read the offset
-                            serialValue = BitConverter.ToString(reader.ReadBytes(17)).Replace("-", null);
-                            reader.Close();
-                        }
-                        catch
-                        {
-                            // Obviously this value is invalid, so null the value and move on
-                            serialValue = null;
-                        }
-
-
-
-                        if (serialValue != null)
-                        {
-                            serialNumber.Text = HexStringToString(serialValue);
-                            serialNumberTextbox.Text = HexStringToString(serialValue);
-
-                        }
-                        else
-                        {
-                            serialNumber.Text = "Unknown";
-                        }
-
-                        #endregion
-
-                        #region Extract WiFi Mac Address
-
-                        try
-                        {
-                            BinaryReader reader = new BinaryReader(new FileStream(fileDialogBox.FileName, FileMode.Open));
-                            //Set the position of the reader
-                            reader.BaseStream.Position = WiFiMacOffset;
-                            //Read the offset
-                            WiFiMacValue = BitConverter.ToString(reader.ReadBytes(6));
-                            reader.Close();
-                        }
-                        catch
-                        {
-                            // Obviously this value is invalid, so null the value and move on
-                            WiFiMacValue = null;
-                        }
-
-                        if (WiFiMacValue != null)
-                        {
-                            macAddressInfo.Text = WiFiMacValue;
-                            wifiMacAddressTextbox.Text = WiFiMacValue;
-                        }
-                        else
-                        {
-                            macAddressInfo.Text = "Unknown";
-                            wifiMacAddressTextbox.Text = "";
-                        }
-
-                        #endregion
-
-                        #region Extract LAN Mac Address
-
-                        try
-                        {
-                            BinaryReader reader = new BinaryReader(new FileStream(fileDialogBox.FileName, FileMode.Open));
-                            //Set the position of the reader
-                            reader.BaseStream.Position = LANMacOffset;
-                            //Read the offset
-                            LANMacValue = BitConverter.ToString(reader.ReadBytes(6));
-                            reader.Close();
-                        }
-                        catch
-                        {
-                            // Obviously this value is invalid, so null the value and move on
-                            LANMacValue = null;
-                        }
-
-                        if (LANMacValue != null)
-                        {
-                            LANMacAddressInfo.Text = LANMacValue;
-                            lanMacAddressTextbox.Text = LANMacValue;
-                        }
-                        else
-                        {
-                            LANMacAddressInfo.Text = "Unknown";
-                            lanMacAddressTextbox.Text = "";
-                        }
-
-                        #endregion
-
-                        #region Extract Board Variant
-
-                        try
-                        {
-                            BinaryReader reader = new BinaryReader(new FileStream(fileDialogBox.FileName, FileMode.Open));
-                            //Set the position of the reader
-                            reader.BaseStream.Position = variantOffset;
-                            //Read the offset
-                            variantValue = BitConverter.ToString(reader.ReadBytes(19)).Replace("-", null).Replace("FF", null);
-                            reader.Close();
-                        }
-                        catch
-                        {
-                            // Obviously this value is invalid, so null the value and move on
-                            variantValue = null;
-                        }
-
-
-
-                        if (variantValue != null)
-                        {
-                            boardVariant.Text = HexStringToString(variantValue);
-                        }
-                        else
-                        {
-                            boardVariant.Text = "Unknown";
-                        }
-
-                        boardVariant.Text += boardVariant.Text switch {
-                            _ when boardVariant.Text.EndsWith("00A") || boardVariant.Text.EndsWith("00B") => " - Japan",
-                            _ when boardVariant.Text.EndsWith("01A") || boardVariant.Text.EndsWith("01B") ||
-                                   boardVariant.Text.EndsWith("15A") || boardVariant.Text.EndsWith("15B") => " - US, Canada, (North America)",
-                            _ when boardVariant.Text.EndsWith("02A") || boardVariant.Text.EndsWith("02B") => " - Australia / New Zealand, (Oceania)",
-                            _ when boardVariant.Text.EndsWith("03A") || boardVariant.Text.EndsWith("03B") => " - United Kingdom / Ireland",
-                            _ when boardVariant.Text.EndsWith("04A") || boardVariant.Text.EndsWith("04B") => " - Europe / Middle East / Africa",
-                            _ when boardVariant.Text.EndsWith("05A") || boardVariant.Text.EndsWith("05B") => " - South Korea",
-                            _ when boardVariant.Text.EndsWith("06A") || boardVariant.Text.EndsWith("06B") => " - Southeast Asia / Hong Kong",
-                            _ when boardVariant.Text.EndsWith("07A") || boardVariant.Text.EndsWith("07B") => " - Taiwan",
-                            _ when boardVariant.Text.EndsWith("08A") || boardVariant.Text.EndsWith("08B") => " - Russia, Ukraine, India, Central Asia",
-                            _ when boardVariant.Text.EndsWith("09A") || boardVariant.Text.EndsWith("09B") => " - Mainland China",
-                            _ when boardVariant.Text.EndsWith("11A") || boardVariant.Text.EndsWith("11B") ||
-                                   boardVariant.Text.EndsWith("14A") || boardVariant.Text.EndsWith("14B") 
-                                => " - Mexico, Central America, South America",
-                            _ when boardVariant.Text.EndsWith("16A") || boardVariant.Text.EndsWith("16B") => " - Europe / Middle East / Africa",
-                            _ when boardVariant.Text.EndsWith("18A") || boardVariant.Text.EndsWith("18B") => " - Singapore, Korea, Asia",
-                            _=> " - Unknown Region"
-                        };
+                        await selectedPS.ReadNORAsync(selectedPath);
+                        modelInfo.Text = selectedPS.GetModel();
+                        moboSerialInfo.Text = selectedPS.GetMotherboardSerialNumber();
+                        serialNumber.Text = selectedPS.GetPSSerialNumber();
+                        serialNumberTextbox.Text = selectedPS.GetPSSerialNumber();
+                        macAddressInfo.Text = selectedPS.GetWifiMac();
+                        wifiMacAddressTextbox.Text = selectedPS.GetWifiMac();
+                        LANMacAddressInfo.Text = selectedPS.GetLanMac();
+                        lanMacAddressTextbox.Text = selectedPS.GetLanMac();
                         #endregion
                     }
                 }
             }
         }
 
-        private void convertToDigitalEditionButton_Click(object sender, EventArgs e)
-        {
+        private async void convertToDigitalEditionButton_Click(object sender, EventArgs e) {
 
             string fileNameToLookFor = "";
-            bool errorShownAlready = false;
 
-            if (modelInfo.Text == "" || modelInfo.Text == "...")
-            {
+            if (selectedPS is null) {
+                throwError("Please select a Playstaion Model");
+                return;
+            }
+            if (modelInfo.Text == "" || modelInfo.Text == "...") {
                 // No valid BIN file seems to have been selected
                 throwError("Please select a valid BIOS file first...");
-                errorShownAlready = true;
+                return;
             }
-            else
-            {
-                if(boardModelSelectionBox.Text == "")
-                {
-                    throwError("Please select a valid board model before saving new BIOS information!");
-                    errorShownAlready = true;
+            if (boardModelSelectionBox.Text == "") {
+                throwError("Please select a valid board model before saving new BIOS information!");
+                return;
+            }
+            if (boardVariantSelectionBox.Text == "") {
+                throwError("Please select a valid board variant before saving new BIOS information!");
+                return;
+            }
+            SaveFileDialog saveBox = new SaveFileDialog();
+            saveBox.Title = "Save NOR BIN File";
+            saveBox.Filter = "PS5 BIN Files|*.bin";
+
+            if (saveBox.ShowDialog() == DialogResult.OK) {
+                // First create a copy of the old BIOS file
+                byte[] existingFile = File.ReadAllBytes(fileLocationBox.Text);
+                byte[] newFileBytes = new byte[existingFile.Length];
+
+                string newFile = saveBox.FileName;
+
+                File.WriteAllBytes(newFile, existingFile);
+
+                fileNameToLookFor = saveBox.FileName;
+                try {
+                    byte[] newNor = selectedPS.WriteNORAsync(newFileBytes, boardModelSelectionBox.Text, serialNumberTextbox.Text, boardVariantSelectionBox.Text);
+                    await File.WriteAllBytesAsync(fileNameToLookFor, newNor);
+                } catch (Exception ex) {
+                    throwError(ex.Message);
                 }
-                else
-                {
-                    if(boardVariantSelectionBox.Text == "")
-                    {
-                        throwError("Please select a valid board variant before saving new BIOS information!");
-                        errorShownAlready = true;
-                    }
-                    else
-                    {
-                        SaveFileDialog saveBox = new SaveFileDialog();
-                        saveBox.Title = "Save NOR BIN File";
-                        saveBox.Filter = "PS5 BIN Files|*.bin";
-
-                        if (saveBox.ShowDialog() == DialogResult.OK)
-                        {
-                            // First create a copy of the old BIOS file
-                            byte[] existingFile = File.ReadAllBytes(fileLocationBox.Text);
-                            string newFile = saveBox.FileName;
-
-                            File.WriteAllBytes(newFile, existingFile);
-
-                            fileNameToLookFor = saveBox.FileName;
-
-                            #region Set the new model info
-                            if (modelInfo.Text == "Disc Edition")
-                            {
-                                try
-                                {
-
-                                    if (boardModelSelectionBox.Text == "Digital Edition")
-
-                                    {
-
-                                        byte[] find = ConvertHexStringToByteArray(Regex.Replace("22020101", "0x|[ ,]", string.Empty).Normalize().Trim());
-                                        byte[] replace = ConvertHexStringToByteArray(Regex.Replace("22030101", "0x|[ ,]", string.Empty).Normalize().Trim());
-                                        if (find.Length != replace.Length)
-                                        {
-                                            throwError("The length of the old hex value does not match the length of the new hex value!");
-                                            errorShownAlready = true;
-                                        }
-                                        byte[] bytes = File.ReadAllBytes(newFile);
-                                        foreach (int index in PatternAt(bytes, find))
-                                        {
-                                            for (int i = index, replaceIndex = 0; i < bytes.Length && replaceIndex < replace.Length; i++, replaceIndex++)
-                                            {
-                                                bytes[i] = replace[replaceIndex];
-                                            }
-                                            File.WriteAllBytes(newFile, bytes);
-                                        }
-                                    }
-
-                                }
-                                catch
-                                {
-                                    throwError("An error occurred while saving your BIOS file");
-                                    errorShownAlready = true;
-                                }
-                            }
-                            else
-                            {
-                                if(modelInfo.Text == "Digital Edition")
-                                {
-                                    try
-                                    {
-
-                                        if (boardModelSelectionBox.Text == "Disc Edition")
-
-                                        {
-
-                                            byte[] find = ConvertHexStringToByteArray(Regex.Replace("22030101", "0x|[ ,]", string.Empty).Normalize().Trim());
-                                            byte[] replace = ConvertHexStringToByteArray(Regex.Replace("22020101", "0x|[ ,]", string.Empty).Normalize().Trim());
-                                            if (find.Length != replace.Length)
-                                            {
-                                                throwError("The length of the old hex value does not match the length of the new hex value!");
-                                                errorShownAlready = true;
-                                            }
-                                            byte[] bytes = File.ReadAllBytes(newFile);
-                                            foreach (int index in PatternAt(bytes, find))
-                                            {
-                                                for (int i = index, replaceIndex = 0; i < bytes.Length && replaceIndex < replace.Length; i++, replaceIndex++)
-                                                {
-                                                    bytes[i] = replace[replaceIndex];
-                                                }
-                                                File.WriteAllBytes(newFile, bytes);
-                                            }
-                                        }
-
-                                    }
-                                    catch
-                                    {
-                                        throwError("An error occurred while saving your BIOS file");
-                                        errorShownAlready = true;
-                                    }
-                                }
-                            }
-                            #endregion
-
-                            #region Set the new board variant
-
-                            try
-                            {
-                                byte[] oldVariant = Encoding.UTF8.GetBytes(boardVariant.Text);
-                                string oldVariantHex = Convert.ToHexString(oldVariant);
-
-                                byte[] newVariantSelection = Encoding.UTF8.GetBytes(boardVariantSelectionBox.Text);
-                                string newVariantHex = Convert.ToHexString(newVariantSelection);
-
-                                byte[] find = ConvertHexStringToByteArray(Regex.Replace(oldVariantHex, "0x|[ ,]", string.Empty).Normalize().Trim());
-                                byte[] replace = ConvertHexStringToByteArray(Regex.Replace(newVariantHex, "0x|[ ,]", string.Empty).Normalize().Trim());
-
-                                byte[] bytes = File.ReadAllBytes(newFile);
-                                foreach (int index in PatternAt(bytes, find))
-                                {
-                                    for (int i = index, replaceIndex = 0; i < bytes.Length && replaceIndex < replace.Length; i++, replaceIndex++)
-                                    {
-                                        bytes[i] = replace[replaceIndex];
-                                    }
-                                    File.WriteAllBytes(newFile, bytes);
-                                }
-
-                            }
-                            catch(System.ArgumentException ex)
-                            {
-                                throwError(ex.Message.ToString());
-                                errorShownAlready = true;
-                            }
-
-                            #endregion
-
-                            #region Change Serial Number
-
-                            try
-                            {
-
-                                byte[] oldSerial = Encoding.UTF8.GetBytes(serialNumber.Text);
-                                string oldSerialHex = Convert.ToHexString(oldSerial);
-
-                                byte[] newSerial = Encoding.UTF8.GetBytes(serialNumberTextbox.Text);
-                                string newSerialHex = Convert.ToHexString(newSerial);
-
-                                byte[] find = ConvertHexStringToByteArray(Regex.Replace(oldSerialHex, "0x|[ ,]", string.Empty).Normalize().Trim());
-                                byte[] replace = ConvertHexStringToByteArray(Regex.Replace(newSerialHex, "0x|[ ,]", string.Empty).Normalize().Trim());
-
-                                byte[] bytes = File.ReadAllBytes(newFile);
-                                foreach (int index in PatternAt(bytes, find))
-                                {
-                                    for (int i = index, replaceIndex = 0; i < bytes.Length && replaceIndex < replace.Length; i++, replaceIndex++)
-                                    {
-                                        bytes[i] = replace[replaceIndex];
-                                    }
-                                    File.WriteAllBytes(newFile, bytes);
-                                }
-
-                            }
-                            catch (System.ArgumentException ex)
-                            {
-                                throwError(ex.Message.ToString());
-                                errorShownAlready = true;
-                            }
-
-                            #endregion
-                        }
-                        else
-                        {
-                            throwError("Save operation cancelled!");
-                            errorShownAlready = true;
-                        }
-                    }
-                }
+            } else {
+                throwError("Save operation cancelled!");
             }
 
-            if(File.Exists(fileNameToLookFor) && errorShownAlready == false)
-            {
+            if (File.Exists(fileNameToLookFor)) {
                 // Reset everything and show message
                 ResetAppFields();
                 MessageBox.Show("A new BIOS file was successfully created. Please load the new BIOS file to verify the information you entered before installing onto your motherboard. Remember this software was created by TheCod3r with nothing but love. Why not show some love back by dropping me a small donation to say thanks ;).", "All done!", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -813,18 +359,15 @@ namespace PS5_NOR_Modifier
 
         }
 
-        private void label15_Click(object sender, EventArgs e)
-        {
+        private void label15_Click(object sender, EventArgs e) {
             OpenUrl("https://www.consolefix.shop");
         }
 
-        private void label1_Click(object sender, EventArgs e)
-        {
+        private void label1_Click(object sender, EventArgs e) {
 
         }
 
-        private void btnRefreshPorts_Click(object sender, EventArgs e)
-        {
+        private void btnRefreshPorts_Click(object sender, EventArgs e) {
             // When the "refresh ports" button is pressed, we need to refresh the list of available COM ports for UART
             string[] ports = SerialPort.GetPortNames();
             comboComPorts.Items.Clear();
@@ -834,16 +377,13 @@ namespace PS5_NOR_Modifier
             btnDisconnectCom.Enabled = false;
         }
 
-        private void btnConnectCom_Click(object sender, EventArgs e)
-        {
+        private void btnConnectCom_Click(object sender, EventArgs e) {
             // Let's try and connect to the UART reader
             btnConnectCom.Enabled = false;
 
-            if (comboComPorts.Text != "")
-            {
+            if (comboComPorts.Text != "") {
 
-                try
-                {
+                try {
                     // Set port to selected port
                     UARTSerial.PortName = comboComPorts.Text;
                     // Set the BAUD rate to 115200
@@ -854,18 +394,14 @@ namespace PS5_NOR_Modifier
                     UARTSerial.Open();
                     btnDisconnectCom.Enabled = true;
                     toolStripStatusLabel1.Text = "Connected to UART via COM port " + comboComPorts.Text + " at a BAUD rate of 115200.";
-                }
-                catch (Exception ex)
-                {
+                } catch (Exception ex) {
                     MessageBox.Show(ex.Message, "An error occurred...", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     btnConnectCom.Enabled = true;
                     btnDisconnectCom.Enabled = false;
                     toolStripStatusLabel1.Text = "Could not connect to UART. Please try again!";
                 }
 
-            }
-            else
-            {
+            } else {
                 MessageBox.Show("Please select a COM port from the ports list to establish a connection.", "An error occurred...", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 btnConnectCom.Enabled = true;
                 btnDisconnectCom.Enabled = false;
@@ -873,21 +409,16 @@ namespace PS5_NOR_Modifier
             }
         }
 
-        private void btnDisconnectCom_Click(object sender, EventArgs e)
-        {
+        private void btnDisconnectCom_Click(object sender, EventArgs e) {
             // Let's close the COM port
-            try
-            {
-                if(UARTSerial.IsOpen == true)
-                {
+            try {
+                if (UARTSerial.IsOpen == true) {
                     UARTSerial.Close();
                     btnConnectCom.Enabled = true;
                     btnDisconnectCom.Enabled = false;
                     toolStripStatusLabel1.Text = "Disconnected from UART...";
                 }
-            }
-            catch(Exception ex)
-            {
+            } catch (Exception ex) {
                 MessageBox.Show(ex.Message, "An error occurred...", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 toolStripStatusLabel1.Text = "An error occurred while disconnecting from UART. Please try again...";
             }
@@ -898,38 +429,30 @@ namespace PS5_NOR_Modifier
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private async void button1_Click(object sender, EventArgs e)
-        {
+        private async void button1_Click(object sender, EventArgs e) {
             // Let's read the error codes from UART
             txtUARTOutput.Text = "";
 
-            if (UARTSerial.IsOpen == true)
-            {
-                try
-                {
+            if (UARTSerial.IsOpen == true) {
+                try {
 
                     List<string> UARTLines = new();
 
-                    for (var i = 0; i <= 10; i++)
-                    {
+                    for (var i = 0; i <= 10; i++) {
                         var command = $"errlog {i}";
                         var checksum = CalculateChecksum(command);
                         UARTSerial.WriteLine(checksum);
-                        do
-                        {
+                        do {
                             var line = UARTSerial.ReadLine();
-                            if (!string.Equals($"{command}:{checksum:X2}", line, StringComparison.InvariantCultureIgnoreCase))
-                            {
+                            if (!string.Equals($"{command}:{checksum:X2}", line, StringComparison.InvariantCultureIgnoreCase)) {
                                 UARTLines.Add(line);
                             }
                         } while (UARTSerial.BytesToRead != 0);
 
-                        foreach (var l in UARTLines)
-                        {
+                        foreach (var l in UARTLines) {
                             var split = l.Split(' ');
                             if (!split.Any()) continue;
-                            switch (split[0])
-                            {
+                            switch (split[0]) {
                                 case "NG":
                                     break;
                                 case "OK":
@@ -937,38 +460,28 @@ namespace PS5_NOR_Modifier
                                     // Now that the error code has been isolated from the rest of the junk sent by the system
                                     // let's check it against the database. The error server will need to return XML results
                                     string errorResult = await ParseErrorsAsync(errorCode);
-                                    if (!txtUARTOutput.Text.Contains(errorResult))
-                                    {
+                                    if (!txtUARTOutput.Text.Contains(errorResult)) {
                                         txtUARTOutput.AppendText(errorResult + Environment.NewLine);
                                     }
                                     break;
                             }
                         }
                     }
-                }
-                catch (Exception ex)
-                {
+                } catch (Exception ex) {
                     MessageBox.Show(ex.Message, "An error occurred...", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     toolStripStatusLabel1.Text = "An error occurred while reading error codes from UART. Please try again...";
                 }
-            }
-            else
-            {
+            } else {
                 MessageBox.Show("Please connect to UART before attempting to read the error codes.", "An error occurred...", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
         // If the app is closed before UART is terminated, we need to at least try to close the COM port gracefully first
-        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            if(UARTSerial.IsOpen == true)
-            {
-                try
-                {
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e) {
+            if (UARTSerial.IsOpen == true) {
+                try {
                     UARTSerial.Close();
-                }
-                catch(Exception ex)
-                {
+                } catch (Exception ex) {
                     MessageBox.Show(ex.Message, "An error occurred...", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
@@ -980,8 +493,7 @@ namespace PS5_NOR_Modifier
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void button3_Click(object sender, EventArgs e)
-        {
+        private void button3_Click(object sender, EventArgs e) {
             txtUARTOutput.Text = "";
         }
 
@@ -991,18 +503,14 @@ namespace PS5_NOR_Modifier
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private async void btnDownloadDatabase_Click(object sender, EventArgs e)
-        {
+        private async void btnDownloadDatabase_Click(object sender, EventArgs e) {
             DialogResult result = MessageBox.Show("Downloading the error database will overwrite any existing offline database you currently have. Are you sure you would like to do this?", "Are you sure?", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
             // Check if user wants to proceed
-            if (result == DialogResult.Yes)
-            {
+            if (result == DialogResult.Yes) {
                 // Call the function to download and save the XML data
                 await DownloadDatabaseAsync();
-            }
-            else
-            {
+            } else {
                 // Do nothing. The user cancelled the request// The user cancelled
             }
         }
@@ -1014,68 +522,52 @@ namespace PS5_NOR_Modifier
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void btnClearErrorCodes_Click(object sender, EventArgs e)
-        {
+        private void btnClearErrorCodes_Click(object sender, EventArgs e) {
             DialogResult result = MessageBox.Show("This will clear error codes from the console by sending the \"errlog clear\" command. Are you sure you would like to proceed? This action cannot be undone!", "Are you sure?", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
-            if(result == DialogResult.Yes)
-            {
+            if (result == DialogResult.Yes) {
                 // Let's read the error codes from UART
                 txtUARTOutput.Text = "";
 
-                if (UARTSerial.IsOpen == true)
-                {
-                    try
-                    {
+                if (UARTSerial.IsOpen == true) {
+                    try {
 
                         List<string> UARTLines = new();
 
-                            var command = "errlog clear";
-                            var checksum = CalculateChecksum(command);
-                            UARTSerial.WriteLine(checksum);
-                            do
-                            {
-                                var line = UARTSerial.ReadLine();
-                                if (!string.Equals($"{command}:{checksum:X2}", line, StringComparison.InvariantCultureIgnoreCase))
-                                {
-                                    UARTLines.Add(line);
-                                }
-                            } while (UARTSerial.BytesToRead != 0);
+                        var command = "errlog clear";
+                        var checksum = CalculateChecksum(command);
+                        UARTSerial.WriteLine(checksum);
+                        do {
+                            var line = UARTSerial.ReadLine();
+                            if (!string.Equals($"{command}:{checksum:X2}", line, StringComparison.InvariantCultureIgnoreCase)) {
+                                UARTLines.Add(line);
+                            }
+                        } while (UARTSerial.BytesToRead != 0);
 
-                        foreach (var l in UARTLines)
-                        {
+                        foreach (var l in UARTLines) {
                             var split = l.Split(' ');
                             if (!split.Any()) continue;
-                            switch (split[0])
-                            {
+                            switch (split[0]) {
                                 case "NG":
-                                    if (!txtUARTOutput.Text.Contains("FAIL"))
-                                    {
+                                    if (!txtUARTOutput.Text.Contains("FAIL")) {
                                         txtUARTOutput.AppendText("Response: FAIL" + Environment.NewLine + "Information: An error occurred while clearing the error logs from the system. Please try again...");
                                     }
                                     break;
                                 case "OK":
-                                    if (!txtUARTOutput.Text.Contains("SUCCESS"))
-                                    {
+                                    if (!txtUARTOutput.Text.Contains("SUCCESS")) {
                                         txtUARTOutput.AppendText("Response: SUCCESS" + Environment.NewLine + "Information: All error codes cleared successfully");
                                     }
                                     break;
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
+                    } catch (Exception ex) {
                         MessageBox.Show(ex.Message, "An error occurred...", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         toolStripStatusLabel1.Text = "An error occurred while attempting to send a UART command. Please try again...";
                     }
-                }
-                else
-                {
+                } else {
                     MessageBox.Show("Please connect to UART before attempting to send commands.", "An error occurred...", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
-            }
-            else
-            {
+            } else {
                 // Do nothing. The user cancelled the request
             }
         }
@@ -1085,37 +577,29 @@ namespace PS5_NOR_Modifier
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void btnSendCommand_Click(object sender, EventArgs e)
-        {
-            if (txtCustomCommand.Text != "")
-            {
+        private void btnSendCommand_Click(object sender, EventArgs e) {
+            if (txtCustomCommand.Text != "") {
                 // Let's read the error codes from UART
                 txtUARTOutput.Text = "";
 
-                if (UARTSerial.IsOpen == true)
-                {
-                    try
-                    {
+                if (UARTSerial.IsOpen == true) {
+                    try {
 
                         List<string> UARTLines = new();
 
                         var checksum = CalculateChecksum(txtCustomCommand.Text);
                         UARTSerial.WriteLine(checksum);
-                        do
-                        {
+                        do {
                             var line = UARTSerial.ReadLine();
-                            if (!string.Equals($"{txtCustomCommand.Text}:{checksum:X2}", line, StringComparison.InvariantCultureIgnoreCase))
-                            {
+                            if (!string.Equals($"{txtCustomCommand.Text}:{checksum:X2}", line, StringComparison.InvariantCultureIgnoreCase)) {
                                 UARTLines.Add(line);
                             }
                         } while (UARTSerial.BytesToRead != 0);
 
-                        foreach (var l in UARTLines)
-                        {
+                        foreach (var l in UARTLines) {
                             var split = l.Split(' ');
                             if (!split.Any()) continue;
-                            switch (split[0])
-                            {
+                            switch (split[0]) {
                                 case "NG":
                                     txtUARTOutput.Text = "ERROR: " + l;
                                     break;
@@ -1124,20 +608,14 @@ namespace PS5_NOR_Modifier
                                     break;
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
+                    } catch (Exception ex) {
                         MessageBox.Show(ex.Message, "An error occurred...", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         toolStripStatusLabel1.Text = "An error occurred while reading error codes from UART. Please try again...";
                     }
-                }
-                else
-                {
+                } else {
                     MessageBox.Show("Please connect to UART before attempting to send commands.", "An error occurred...", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
-            }
-            else
-            {
+            } else {
                 MessageBox.Show("Please enter a command to send via UART.", "An error occurred...", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
@@ -1148,12 +626,14 @@ namespace PS5_NOR_Modifier
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void txtCustomCommand_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            if(e.KeyChar == (char)Keys.Enter)
-            {
+        private void txtCustomCommand_KeyPress(object sender, KeyPressEventArgs e) {
+            if (e.KeyChar == (char)Keys.Enter) {
                 btnSendCommand.PerformClick();
             }
+        }
+
+        private void label26_Click(object sender, EventArgs e) {
+
         }
     }
 }
